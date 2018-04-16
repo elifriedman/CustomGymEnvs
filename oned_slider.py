@@ -26,17 +26,20 @@ class OneDSlider(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self):
+    def __init__(self, her=True):
         self.min_action = -1.0
         self.max_action = 1.0
         self.min_position = -100.
         self.max_position = 100.
         self.max_speed = 20.
-        self.goal_state = np.array([0, 0])
-        self.tolerance = 0.5
 
-        self.prev_info = None
-        self.curr_info = None
+        self.goal = None  # initialized in self.reset()
+        self.tolerance = 0.5
+        self._max_episode_steps = 10000
+        self.weights = np.array([0.5, 0.5])
+
+        self.prev_render_info = None
+        self.curr_render_info = None
         self.t = 0
 
         self.low_state = np.array([self.min_position, -self.max_speed])
@@ -44,8 +47,17 @@ class OneDSlider(gym.Env):
 
         self.viewer = None
 
-        self.action_space = spaces.Box(low=self.min_action, high=self.max_action, shape=(1,))
-        self.observation_space = spaces.Box(low=self.low_state, high=self.high_state)
+        self.action_space = spaces.Box(low=self.min_action, high=self.max_action, shape=(1,), dtype="float32")
+
+        self.her = her
+        if self.her:
+            self.observation_space = spaces.Dict(dict(
+                desired_goal=spaces.Box(low=self.low_state, high=self.high_state, dtype="float32"),
+                achieved_goal=spaces.Box(low=self.low_state, high=self.high_state, dtype="float32"),
+                observation=spaces.Box(low=self.low_state, high=self.high_state, dtype="float32"),
+            ))
+        else:
+            self.observation_space = spaces.Box(low=self.low_state, high=self.high_state, dtype="float32")
 
         self.seed()
         self.reset()
@@ -56,36 +68,79 @@ class OneDSlider(gym.Env):
 
     def step(self, action):
 
-        self.prev_info = self.curr_info
+        self.prev_render_info = self.curr_render_info
 
-        position = self.state[0]
-        velocity = self.state[1]
-        force = min(max(action[0], -1.0), 1.0)
+        position, velocity = self.state
+        action = float(np.clip(action, self.action_space.low, self.action_space.high))
 
-        velocity += force
-        if (velocity > self.max_speed): velocity = self.max_speed
-        if (velocity < -self.max_speed): velocity = -self.max_speed
+        velocity += action
+        velocity = np.clip(velocity, -self.max_speed, self.max_speed)
         position += velocity
-        if (position > self.max_position): position = self.max_position
-        if (position < self.min_position): position = self.min_position
+        position = np.clip(position, self.min_position, self.max_position)
         if (position==self.min_position and velocity<0): velocity = 0
         if (position==self.max_position and velocity>0): velocity = 0
 
-        done = bool(np.sum(np.square(self.state - self.goal_state)) < self.tolerance)
+        self.state[:] = [position, velocity]
+        done = bool(np.linalg.norm(self.state - self.goal) < self.tolerance) or self.t >= self._max_episode_steps
 
-        reward = np.array([-1., -abs(action[0])])
-        if done:
-            reward = np.zeros(2)
+        # Used by compute_reward() and _compute_vector_reward()
+        # Needed, in order to make the env compatible w/ HER code
+        info = {
+            "weights": self.weights,
+            "action": action,
+        }
+        vector_reward = self.compute_reward(self.state, self.goal, info, vector=True)
+        reward = vector_reward.dot(info["weights"])
 
-        self.state = np.array([position, velocity])
+        obs = self._make_obs()
 
-        self.curr_info = [position/2, velocity*5, force*20]
+        info.update({
+            'is_success': done,
+            'vector_reward': vector_reward,
+        })
+
+        self.curr_render_info = [position/2, velocity*5, action*20]
         self.t += 1
-        return self.state, sum(reward), done, {"reward": reward}
+        if self.her:
+            return obs, reward, done, info
+        else:
+            return self.state.copy(), reward, done, info
+
+    def compute_reward(self, achieved_goal, goal, info, vector=False):
+        weights = info["weights"]
+        action = info["action"]
+        dist = np.linalg.norm(achieved_goal - goal, axis=-1)
+        if len(dist.shape) == 0:
+            reward = np.zeros(2) if dist <= self.tolerance else np.array([-1, -abs(action)])
+            return reward.dot(weights) if not vector else reward
+        else:
+            cond = (dist <= self.tolerance).reshape(-1, 1).repeat(2, axis=1)  # make it (N, 2)
+            neg_reward = -1 * np.ones_like(cond)
+            neg_reward[:, 1] = action.squeeze()
+            reward = np.where(cond, np.zeros_like(cond), neg_reward)
+            return np.sum(reward * weights, axis=1) if not vector else reward
+
+    def _sample_goal(self):
+        # randomize only goal position or also velocity?
+        # return np.array([self.np_random.uniform(low=self.low_state[0], high=self.high_state[0]), 0])
+        return np.random.uniform(low=self.low_state, high=self.high_state)
+
+    def _make_obs(self):
+        return {
+            'observation': self.state.copy(),
+            'achieved_goal': self.state.copy(),
+            'desired_goal': self.goal.copy(),
+        }
 
     def reset(self):
-        self.state = np.array([self.np_random.uniform(low=-5, high=5), 0])
-        return np.array(self.state)
+        self.goal = self._sample_goal()
+        self.state = np.array([self.np_random.uniform(low=self.low_state[0], high=self.high_state[0]), 0])
+        self.prev_render_info = None
+        self.curr_render_info = None
+        if self.viewer:
+            self.clear_render()
+        self.t = 0
+        return self._make_obs()
 
     def render(self, mode='human'):
         screen_width = 600
@@ -95,7 +150,6 @@ class OneDSlider(gym.Env):
         scaler = screen_width/world_width
 
         COLORS = np.eye(3)
-        BLANK = np.zeros(4)
         upscale = 150
 
         if self.viewer is None:
@@ -134,7 +188,7 @@ class OneDSlider(gym.Env):
             from gym.envs.classic_control import rendering
             t = self.t % (screen_width / scaler)
             for i in range(3):
-                prev, curr = self.prev_info[i], self.curr_info[i]
+                prev, curr = self.prev_render_info[i], self.curr_render_info[i]
                 line = rendering.Line(start=(scaler*(t-1), prev+upscale*i + upscale/2), end=(scaler*t, curr+upscale*i + upscale/2))
                 line.set_color(*COLORS[i])
                 line.linewidth.stroke = 2
@@ -142,12 +196,15 @@ class OneDSlider(gym.Env):
                 self.viewer.add_geom(line)
 
             if t == 0:
-                for line in self.lines:
-                    line._color.vec4 = BLANK
-                self.lines = []
-
+                self.clear_render()
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
+
+    def clear_render(self):
+        BLANK = np.zeros(4)
+        for line in self.lines:
+            line._color.vec4 = BLANK
+        self.lines = []
 
     def close(self):
         if self.viewer: self.viewer.close()
