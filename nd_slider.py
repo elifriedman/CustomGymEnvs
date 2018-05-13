@@ -27,13 +27,13 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
-class OneDSlider(gym.Env):
+class NDSlider(gym.Env):
     metadata = {
         'render.modes': ['human', 'rgb_array'],
         'video.frames_per_second': 30
     }
 
-    def __init__(self, her=True):
+    def __init__(self, her=True, N=2):
         self.min_action = -1.0
         self.max_action = 1.0
         self.min_position = -100.
@@ -43,20 +43,21 @@ class OneDSlider(gym.Env):
         self.goal = None  # initialized in self.reset()
         self.weights = None  # initialized in self.reset()
         self.tolerance = 1.0
-        self.OBS_SAMPLE_STRATEGY = 'zero'  # options are 'zero', 'pos', 'vel'
-        self.WEIGHT_SAMPLE_STRATEGY = 'const'  # options are 'const', 'rand'
+        self.OBS_SAMPLE_STRATEGY = 'pos'  # options are 'zero', 'pos', 'vel'
+        self.WEIGHT_SAMPLE_STRATEGY = 'rand'  # options are 'const', 'rand'
 
         self.prev_render_info = None
         self.curr_render_info = None
         self.t = 0
 
-        self.low_state = np.array([self.min_position, -self.max_speed])
-        self.high_state = np.array([self.max_position, self.max_speed])
+        self.low_state = np.array([self.min_position]*N + [-self.max_speed]*N)
+        self.high_state = np.array([self.max_position]*N + [self.max_speed]*N)
 
         self.viewer = None
 
-        self.action_space = spaces.Box(low=self.min_action, high=self.max_action, shape=(1,), dtype="float32")
+        self.action_space = spaces.Box(low=self.min_action, high=self.max_action, shape=(N,), dtype="float32")
 
+        self.N = N
         self.her = her
         if self.her:
             self.observation_space = spaces.Dict(dict(
@@ -78,17 +79,17 @@ class OneDSlider(gym.Env):
 
         self.prev_render_info = self.curr_render_info
 
-        position, velocity = self.state
-        action = float(np.clip(action, self.action_space.low, self.action_space.high))
+        position, velocity = self.state[:self.N], self.state[self.N:]
+        action = np.clip(action, self.action_space.low, self.action_space.high)
 
         velocity += action
         velocity = np.clip(velocity, -self.max_speed, self.max_speed)
         position += velocity
         position = np.clip(position, self.min_position, self.max_position)
-        if (position==self.min_position and velocity<0): velocity = 0
-        if (position==self.max_position and velocity>0): velocity = 0
+        velocity[(position==self.min_position)*(velocity<0)] = 0
+        velocity[(position==self.max_position)*(velocity>0)] = 0
 
-        self.state[:] = [position, velocity]
+        self.state = np.concatenate([position, velocity])
         done = bool(np.linalg.norm(self.state - self.goal) < self.tolerance)
 
         # Used by compute_reward() and _compute_vector_reward()
@@ -115,34 +116,59 @@ class OneDSlider(gym.Env):
             return self.state.copy(), reward, done, info
 
     def compute_reward(self, achieved_goal, goal, info, vector=False):
+        """Reward is (0, 0) for each position dimension that's close to the goal and (-1, -|u|)
+           for each dimension that's not.
+        """
         weights = info["weights"]
         action = info["action"]
-        dist = np.linalg.norm(achieved_goal - goal, axis=-1)
-        if dist.ndim == 0:
-            reward = np.zeros(2) if dist <= self.tolerance else np.array([-1, -abs(action)])
-            return reward.dot(weights) if not vector else reward
+
+        unbatched = len(achieved_goal.shape) == 1  # didn't pass in a batch
+        if unbatched:
+            achieved_goal = achieved_goal.reshape(1, -1)
+            goal = goal.reshape(1, -1)
+
+        diff = np.square(achieved_goal - goal)
+        positions, vels = diff[:, :self.N], diff[:, self.N:2*self.N]  # calculate per-dimension
+        dist = np.sqrt(positions + vels)
+        cond = dist <= self.tolerance
+
+        # reward shape is K x 2*N where K is batch size and N is number of position dimensions (ie self.N)
+        # 2*N because first N elements for time reward and second N elements for -|action| reward
+        cond = np.tile(cond, 2)  # [cond, cond] is K x 2*N first cond for time, second cond for action
+        reward = np.where(cond,
+                          np.zeros((cond.shape[0], 2*self.N)),
+                          np.concatenate([ -np.ones(action.shape), -np.abs(action)], axis=-1))
+
+        if vector:
+            return reward.squeeze() if unbatched else reward
+        elif unbatched:
+            return float(reward.dot(weights)) 
         else:
-            cond = (dist <= self.tolerance).reshape(-1, 1).repeat(2, axis=1)  # make it (N, 2)
-            neg_reward = -1 * np.ones_like(cond)
-            neg_reward[:, 1] = -1 * np.abs(action).squeeze()
-            reward = np.where(cond, np.zeros_like(cond), neg_reward)
-            return np.sum(reward * weights, axis=1) if not vector else reward
+            return reward.dot(weights)
+
+        # else:
+            # cond = cond.reshape(-1, 1).repeat(2, axis=1)  # make it (N, 2)
+            # neg_reward = -1 * np.ones_like(cond)
+            # neg_reward[:, 1] = -1 * np.abs(action).squeeze()
+            # reward = np.where(cond, np.zeros_like(cond), neg_reward)
+            # return np.sum(reward * weights, axis=1) if not vector else reward
 
     def _sample_goal(self):
         # randomize only goal position or also velocity?
         if self.OBS_SAMPLE_STRATEGY == 'zero':
-            return np.array([0, 0])
+            return np.zeros(2*self.N)
         elif self.OBS_SAMPLE_STRATEGY == 'pos':
-            return np.array([self.np_random.uniform(low=self.low_state[0], high=self.high_state[0]), 0])
+            return np.concatenate([self.np_random.uniform(low=self.low_state[0:self.N], high=self.high_state[:self.N]),
+                                   np.zeros(self.N)])
         else:
             return self.np_random.uniform(low=self.low_state, high=self.high_state)
 
     def _sample_weights(self):
         if self.WEIGHT_SAMPLE_STRATEGY == 'const':
-            return np.array([1, 0])
+            w = np.concatenate([np.ones(self.N), np.zeros(self.N)])
         else:
-            w = self.np_random.rand(2)
-            return w / w.sum()
+            w = self.np_random.rand(2*self.N)
+        return w / w.sum()
 
     def _make_obs(self):
         if self.her:
@@ -157,7 +183,8 @@ class OneDSlider(gym.Env):
     def reset(self):
         self.goal = self._sample_goal()
         self.weights = self._sample_weights()
-        self.state = np.array([self.np_random.uniform(low=self.low_state[0], high=self.high_state[0]), 0.])
+        self.state = np.concatenate([self.np_random.uniform(low=self.low_state[0:self.N], high=self.high_state[:self.N]),
+                                     np.zeros(self.N)])
         self.prev_render_info = None
         self.curr_render_info = None
         if self.viewer:
