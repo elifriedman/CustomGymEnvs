@@ -22,8 +22,7 @@ Solution found with the help of [1]
 """
 
 import math
-import gym
-from gym import spaces
+import gym, gym.spaces as spaces
 from gym.utils import seeding
 import numpy as np
 
