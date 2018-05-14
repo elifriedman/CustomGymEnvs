@@ -9,6 +9,8 @@ register(
     max_episode_steps=2048,
     kwargs={
         "her": True,
+        "goal_sample": "pos", # options are 'zero', 'pos', 'vel'
+        "weight_sample": "rand", # options are "rand", "const"
     },
 )
 
@@ -19,5 +21,7 @@ register(
     kwargs={
         "her": True,
         "N": 3,
+        "goal_sample": "pos", # options are 'zero', 'pos', 'vel'
+        "weight_sample": "rand", # options are "rand", "const"
     },
 )
