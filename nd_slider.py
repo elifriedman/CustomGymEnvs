@@ -145,14 +145,7 @@ class NDSlider(gym.Env):
         elif unbatched:
             return float(reward.dot(weights)) 
         else:
-            return reward.dot(weights)
-
-        # else:
-            # cond = cond.reshape(-1, 1).repeat(2, axis=1)  # make it (N, 2)
-            # neg_reward = -1 * np.ones_like(cond)
-            # neg_reward[:, 1] = -1 * np.abs(action).squeeze()
-            # reward = np.where(cond, np.zeros_like(cond), neg_reward)
-            # return np.sum(reward * weights, axis=1) if not vector else reward
+            return np.sum(reward * weights, axis=1)
 
     def _sample_goal(self):
         # randomize only goal position or also velocity?
