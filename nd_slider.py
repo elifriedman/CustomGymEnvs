@@ -80,8 +80,8 @@ class NDSlider(gym.Env):
 
         position, velocity = self.state[:self.N], self.state[self.N:]
         action = np.clip(action, self.action_space.low, self.action_space.high)
-        s = action.sum()
-        action = action / s if np.abs(s) > 1 else action
+        s = np.abs(action).sum()
+        action = action / s if s > 1 else action
 
         velocity += action
         velocity = np.clip(velocity, -self.max_speed, self.max_speed)
