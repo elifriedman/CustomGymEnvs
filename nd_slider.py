@@ -161,7 +161,10 @@ class NDSlider(gym.Env):
         if self.WEIGHT_SAMPLE_STRATEGY == 'const':
             w = np.concatenate([np.ones(self.N), np.zeros(self.N)])
         else:
+            # generate uniformly over the simplex (=multidimensional line-segment, triangle, ...)
+            # https://stats.stackexchange.com/questions/14059/generate-uniformly-distributed-weights-that-sum-to-unity
             w = self.np_random.rand(2*self.N)
+            w = -np.log(w)
         return w / w.sum()
 
     def _make_obs(self):
