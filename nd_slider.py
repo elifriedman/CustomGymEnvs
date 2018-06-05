@@ -38,12 +38,18 @@ class NDSlider(gym.Env):
         self.min_position = -100.
         self.max_position = 100.
         self.max_speed = 20.
+        self.N = N
+        self.her = her
 
         self.goal = None  # initialized in self.reset()
         self.weights = None  # initialized in self.reset()
         self.tolerance = 1.0
         self.OBS_SAMPLE_STRATEGY = goal_sample  # options are 'zero', 'pos', 'vel'
         self.WEIGHT_SAMPLE_STRATEGY = weight_sample  # options are 'const', 'rand'
+        if 'grid' in weight_sample:
+            weight_density = int(weight_sample.split("_")[1])
+            self._init_weights(weight_density)
+            self.WEIGHT_SAMPLE_STRATEGY = 'grid'
 
         self.prev_render_info = None
         self.curr_render_info = None
@@ -56,8 +62,6 @@ class NDSlider(gym.Env):
 
         self.action_space = spaces.Box(low=self.min_action, high=self.max_action, shape=(N,), dtype="float32")
 
-        self.N = N
-        self.her = her
         if self.her:
             self.observation_space = spaces.Dict(dict(
                 desired_goal=spaces.Box(low=self.low_state, high=self.high_state, dtype="float32"),
@@ -157,14 +161,23 @@ class NDSlider(gym.Env):
         else:
             return self.np_random.uniform(low=self.low_state, high=self.high_state)
 
+    def _init_weights(self, weight_density=3):
+        weights = np.meshgrid(*[np.linspace(0, 1, weight_density)]*(2*self.N - 1))
+        weights = np.array([w.reshape(-1) for w in weights]).T
+        weights = weights[np.sum(weights, axis=1) <= 1]
+        self.sample_weights = np.concatenate([weights, 1 - weights.sum(axis=1, keepdims=True)], axis=1)
+
     def _sample_weights(self):
         if self.WEIGHT_SAMPLE_STRATEGY == 'const':
             w = np.concatenate([np.ones(self.N), np.zeros(self.N)])
-        else:
+        elif self.WEIGHT_SAMPLE_STRATEGY == 'rand':
             # generate uniformly over the simplex (=multidimensional line-segment, triangle, ...)
             # https://stats.stackexchange.com/questions/14059/generate-uniformly-distributed-weights-that-sum-to-unity
             w = self.np_random.rand(2*self.N)
             w = -np.log(w)
+        elif self.WEIGHT_SAMPLE_STRATEGY == 'grid':
+            idx = np.random.choice(range(len(self.sample_weights)))
+            w = self.sample_weights[idx]
         return w / w.sum()
 
     def _make_obs(self):
