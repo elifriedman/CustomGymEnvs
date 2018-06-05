@@ -151,7 +151,7 @@ class NDSlider(gym.Env):
         else:
             return np.sum(reward * weights, axis=1)
 
-    def _sample_goal(self):
+    def sample_goal(self):
         # randomize only goal position or also velocity?
         if self.OBS_SAMPLE_STRATEGY == 'zero':
             return np.zeros(2*self.N)
@@ -165,9 +165,9 @@ class NDSlider(gym.Env):
         weights = np.meshgrid(*[np.linspace(0, 1, weight_density)]*(2*self.N - 1))
         weights = np.array([w.reshape(-1) for w in weights]).T
         weights = weights[np.sum(weights, axis=1) <= 1]
-        self.sample_weights = np.concatenate([weights, 1 - weights.sum(axis=1, keepdims=True)], axis=1)
+        self.weight_grid = np.concatenate([weights, 1 - weights.sum(axis=1, keepdims=True)], axis=1)
 
-    def _sample_weights(self):
+    def sample_weights(self):
         if self.WEIGHT_SAMPLE_STRATEGY == 'const':
             w = np.concatenate([np.ones(self.N), np.zeros(self.N)])
         elif self.WEIGHT_SAMPLE_STRATEGY == 'rand':
@@ -176,8 +176,8 @@ class NDSlider(gym.Env):
             w = self.np_random.rand(2*self.N)
             w = -np.log(w)
         elif self.WEIGHT_SAMPLE_STRATEGY == 'grid':
-            idx = np.random.choice(range(len(self.sample_weights)))
-            w = self.sample_weights[idx]
+            idx = np.random.choice(range(len(self.weight_grid)))
+            w = self.weight_grid[idx]
         return w / w.sum()
 
     def _make_obs(self):
@@ -191,8 +191,8 @@ class NDSlider(gym.Env):
             return self.state.copy()
 
     def reset(self):
-        self.goal = self._sample_goal()
-        self.weights = self._sample_weights()
+        self.goal = self.sample_goal()
+        self.weights = self.sample_weights()
         self.state = np.concatenate([self.np_random.uniform(low=self.low_state[0:self.N], high=self.high_state[:self.N]),
                                      np.zeros(self.N)])
         self.prev_render_info = None
