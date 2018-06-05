@@ -100,7 +100,7 @@ class NDSlider(gym.Env):
         # Used by compute_reward() and _compute_vector_reward()
         # Needed, in order to make the env compatible w/ HER code
         info = {
-            "weights": self.weights,
+            "weights": self.weights.copy(),
             "action": action,
         }
         vector_reward = self.compute_reward(self.state, self.goal, info, vector=True)
@@ -184,8 +184,8 @@ class NDSlider(gym.Env):
         if self.her:
             return {
                 'observation': self.state.copy(),
-                'achieved_goal': np.concatenate([self.state, self.weights]),
-                'desired_goal': np.concatenate([self.goal, self.weights]),
+                'achieved_goal': self.state.copy(),
+                'desired_goal': self.goal.copy(),
             }
         else:
             return self.state.copy()
