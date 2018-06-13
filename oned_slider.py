@@ -127,7 +127,7 @@ class OneDSlider(gym.Env):
             reward = np.where(cond, np.zeros_like(cond), neg_reward)
             return np.sum(reward * weights, axis=1) if not vector else reward
 
-    def _sample_goal(self):
+    def sample_goal(self):
         # randomize only goal position or also velocity?
         if self.OBS_SAMPLE_STRATEGY == 'zero':
             return np.array([0, 0])
@@ -136,7 +136,7 @@ class OneDSlider(gym.Env):
         else:
             return self.np_random.uniform(low=self.low_state, high=self.high_state)
 
-    def _sample_weights(self):
+    def sample_weights(self):
         if self.WEIGHT_SAMPLE_STRATEGY == 'const':
             return np.array([1, 0])
         else:
@@ -155,8 +155,8 @@ class OneDSlider(gym.Env):
             return self.state.copy()
 
     def reset(self):
-        self.goal = self._sample_goal()
-        self.weights = self._sample_weights()
+        self.goal = self.sample_goal()
+        self.weights = self.sample_weights()
         self.state = np.array([self.np_random.uniform(low=self.low_state[0], high=self.high_state[0]), 0.])
         self.prev_render_info = None
         self.curr_render_info = None
