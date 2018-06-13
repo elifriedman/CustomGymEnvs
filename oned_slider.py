@@ -141,6 +141,7 @@ class OneDSlider(gym.Env):
             return np.array([1, 0])
         else:
             w = self.np_random.rand(2)
+            w = -np.log(w)
             return w / w.sum()
 
     def _make_obs(self):
