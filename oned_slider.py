@@ -27,17 +27,19 @@ from gym.utils import seeding
 import numpy as np
 
 class OneDSlider(gym.Env):
+    N = 1
     metadata = {
         'render.modes': ['human', 'rgb_array'],
         'video.frames_per_second': 30
     }
 
-    def __init__(self, her=True, goal_sample='pos', weight_sample='rand'):
+    def __init__(self, her=True, goal_sample='pos', weight_sample='rand', dt=0.25):
         self.min_action = -1.0
         self.max_action = 1.0
         self.min_position = -100.
         self.max_position = 100.
         self.max_speed = 20.
+        self.dt = dt
 
         self.goal = None  # initialized in self.reset()
         self.weights = None  # initialized in self.reset()
@@ -80,9 +82,9 @@ class OneDSlider(gym.Env):
         position, velocity = self.state
         action = float(np.clip(action, self.action_space.low, self.action_space.high))
 
-        velocity += action
+        velocity += action*self.dt
         velocity = np.clip(velocity, -self.max_speed, self.max_speed)
-        position += velocity
+        position += velocity*self.dt
         position = np.clip(position, self.min_position, self.max_position)
         if (position==self.min_position and velocity<0): velocity = 0
         if (position==self.max_position and velocity>0): velocity = 0
