@@ -32,7 +32,7 @@ class NDSlider(gym.Env):
         'video.frames_per_second': 30
     }
 
-    def __init__(self, her=True, N=2, goal_sample='pos', weight_sample='rand', dt=0.25)):
+    def __init__(self, her=True, N=2, goal_sample='pos', weight_sample='rand', dt=0.25):
         self.min_action = -1.0
         self.max_action = 1.0
         self.min_position = -100.
