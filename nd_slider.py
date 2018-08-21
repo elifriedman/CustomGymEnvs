@@ -125,7 +125,7 @@ class NDSlider(gym.Env):
         if unbatched:
             achieved_goal = achieved_goal.reshape(1, -1)
             goal = goal.reshape(1, -1)
-            action.reshape(1, -1)
+            action = action.reshape(1, -1)
 
         diff = np.square(achieved_goal - goal)
         positions, vels = diff[:, :self.N], diff[:, self.N:2*self.N]  # calculate per-dimension
