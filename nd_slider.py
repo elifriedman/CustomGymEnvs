@@ -2,12 +2,13 @@
 """
 @author: Eli Friedman
 
-A double integrator task. The agent controls the acceleration of a unit mass object sliding along a line.
+A double integrator task. The agent controls the acceleration of a unit mass object sliding along an N-dimensional plane.
 The reward is a trade off between time-to-goal [T] and fuel-use [u] (absolute value of control input). It's
-controlled by the weight env.weights = [alpha, 1 - alpha], where 0 <= alpha <= 1 controls how valuable it is
-to minimize time.
+controlled by the weight env.weights = [w_0, w_1, ..., w_{2N-1}, w_{2N}], where w_0 ... w_N control the weight for 
+minimizing time to destination along axes 1 to N and w_{N+1} ... w_{2N} control the weight for minimizing fuel use along 
+axes 1 to N
 
-The optimal solution is a bang-off-bang controller with 
+The optimal solution for the 1D case is a bang-off-bang controller with 
       1  t < t1
 u = { 0  t1 < t < t2
      -1  t2 < t
