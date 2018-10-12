@@ -2,6 +2,7 @@ from gym.envs.registration import register as _register
 
 from .oned_slider import OneDSlider
 from .nd_slider import NDSlider
+from .gridworld import GridWorld
 
 def register(env, max_episode_steps=2048, **kwargs):
     _register(
